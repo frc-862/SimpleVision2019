@@ -101,12 +101,18 @@ where there is no shared code between the modules (i.e., each module does things
 
       // Detect blobs and get their contours:
       auto contours = itsDetector->detect(imghsv);
-      auto rects = filterContours(contours);
-
+      bool frameWritten = false;
       if (frameWrites::get() != -1) {
         if (++frameCount % frameWrites::get() == 0) {
           cv::imwrite( "/jevois/data/simpleFrame" + std::to_string(++imageCount % 1000) + ".jpg", imgbgr);
+          frameWritten = true;
         }
+      }
+      std::string frameDetail;
+      auto rects = filterContours(contours, frameWritten, frameDetail);
+      if (frameWritten) {
+        std::ofstream out("/jevois/data/simpleFrame" + std::to_string(imageCount % 1000) + ".txt");
+        out << frameDetail; 
       }
 
       sendObjects((size_t) contours.size(), rects);
@@ -124,22 +130,31 @@ where there is no shared code between the modules (i.e., each module does things
       return rightAngle::get().contains(r.angle);
     }
 
-    std::vector<cv::RotatedRect> filterContours(const std::vector<std::vector<cv::Point> >& contours) {
+    std::vector<cv::RotatedRect> filterContours(const std::vector<std::vector<cv::Point> >& contours, bool generate_details, std::string& details) {
       std::vector<cv::RotatedRect> rects;
       int i = 0;
       for (const auto& c : contours) {
         auto r = cv::minAreaRect(c);
         auto ratio = getRatio(r);
 
+        std::ostringstream os;
+        if (generate_details || serstyle::get() == jevois::module::SerStyle::Detail) {
+          os << "OB" << i << " " 
+             << r.center.x << " "
+             << r.center.y << " "
+             << r.size.width << " "
+             << r.size.height << " "
+             << ratio << " "
+             << r.angle << " "
+             << r.size.width * r.size.height << "\n";
+        }
+
         if (serstyle::get() == jevois::module::SerStyle::Detail) {
-          sendSerial("OB" + std::to_string(i) + " " + 
-            std::to_string(r.center.x) + " " + 
-            std::to_string(r.center.y) + " " + 
-            std::to_string(r.size.width) + " " + 
-            std::to_string(r.size.height) + " " +
-            std::to_string(ratio) + " " + 
-            std::to_string(r.angle) + " " + 
-            std::to_string(r.size.width * r.size.height));
+          sendSerial(os.str()); 
+        }
+
+        if (generate_details) {
+          details += os.str();
         }
         
         if (targetRatio::get().contains(ratio)) {
@@ -278,7 +293,14 @@ where there is no shared code between the modules (i.e., each module does things
 
       // Detect blobs and get their contours:
       auto contours = itsDetector->detect(imghsv);
-      auto rects = filterContours(contours);
+      bool frameWritten = false;
+      if (frameWrites::get() != -1) {
+        if (++frameCount % frameWrites::get() == 0) {
+          frameWritten = true;
+        }
+      }
+      std::string frameDetail;
+      auto rects = filterContours(contours, frameWritten, frameDetail);
 
       // Wait for paste to finish up:
       paste_fut.get();
@@ -317,13 +339,11 @@ where there is no shared code between the modules (i.e., each module does things
         // Wait until all contours are drawn, if they had been requested:
         draw_fut.get();
 
-        if (frameWrites::get() != -1) {
-            std::cout << "Check " << frameCount << std::endl;
-          if (++frameCount % frameWrites::get() == 0) {
-            std::cout << "Writing " << imageCount << std::endl;
-            cv::imwrite( std::string("/jevois/data/simpleFrame") + std::to_string(++imageCount % 1000) + ".jpg", 
-              imgbgr);
-          }
+        if (frameWritten) {
+          cv::imwrite( std::string("/jevois/data/simpleFrame") + std::to_string(++imageCount % 1000) + ".jpg", 
+            imgbgr);
+          std::ofstream out("/jevois/data/simpleFrame" + std::to_string(imageCount % 1000) + ".txt");
+          out << frameDetail; 
         }
 
         // Send the output image with our processing results to the host over USB:
