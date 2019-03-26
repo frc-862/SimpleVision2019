@@ -9,4 +9,4 @@ if [ `cat /proc/cpuinfo | grep ARM | wc -l` -gt 0 ]; then ncpu=1; fi
     && cd hbuild \
     && cmake "$@" .. \
     && make -j ${ncpu} \
-    && sudo make install
+    && make install
